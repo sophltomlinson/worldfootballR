@@ -54,10 +54,13 @@ fb_team_player_stats <- function(team_urls, stat_type, time_pause=3) {
 
     page <- .load_page(team_url)
 
+    team_id <- team_url %>% stringr::str_extract(., "(?<=squads[/])[0-9a-zA-Z]+(?=[/])")
     team_season <- page %>% rvest::html_nodes("h1") %>% rvest::html_nodes("span") %>% .[1] %>% rvest::html_text()
     season <- team_season %>% stringr::str_extract(., "(\\d+)-(\\d+)")
     Squad <- team_season %>% gsub("(\\d+)-(\\d+)", "", .) %>% gsub("\\sStats", "", .) %>% stringr::str_squish()
     league <- page %>% rvest::html_nodes("h1") %>% rvest::html_nodes("span") %>% .[2] %>% rvest::html_text() %>% gsub("\\(", "", .) %>% gsub("\\)", "", .)
+    league_url <- page %>% rvest::html_nodes(".prevnext+p a") %>% rvest::html_attr("href")
+    league_id <- league_url %>% stringr::str_extract(., '(?<=comps/)[0-9]+(?=/)')
 
     tabs <- page %>% rvest::html_nodes(".table_container")
     tab_names <- page %>% rvest::html_nodes("#content") %>% rvest::html_nodes(".table_wrapper") %>% rvest::html_attr("id")
@@ -123,13 +126,18 @@ fb_team_player_stats <- function(team_urls, stat_type, time_pause=3) {
         player_urls <- c(player_urls, each_url)
       }
 
+      player_ids <- stringr::str_extract(player_urls, '(?<=players[/])[0-9a-zA-Z]+(?=[/])')
+
 
       tab <- tab %>%
         dplyr::mutate(Season = season,
                       Squad=Squad,
                       Comp=league,
-                      PlayerURL = player_urls) %>%
-        dplyr::select(.data[["Season"]], .data[["Squad"]], .data[["Comp"]], dplyr::everything())
+                      PlayerURL = player_urls,
+                      PlayerId = player_ids,
+                      TeamId = team_id,
+                      CompetitionId = league_id) %>%
+        dplyr::select(.data[["Season"]], .data[["Squad"]], .data[["Comp"]], .data[["CompetitionId"]], .data[["PlayerId"]], .data[["TeamId"]], dplyr::everything())
     }
 
     return(tab)
