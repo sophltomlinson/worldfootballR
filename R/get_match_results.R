@@ -66,8 +66,8 @@
   }
 
 
-  get_url <- function(tab_element) {
-    a <- tab_element %>% rvest::html_node(xpath='.//*[@data-stat="match_report"]//a') %>% rvest::html_attr("href")
+  get_url <- function(tab_element, target_path) {
+    a <- tab_element %>% rvest::html_node(xpath=target_path) %>% rvest::html_attr("href")
     if(is.na(a) || length(a) == 0) {
       a <- NA_character_
     } else {
@@ -77,8 +77,16 @@
     return(a)
   }
 
-  match_urls <- purrr::map_chr(tab_holder, get_url)
+  match_urls <- purrr::map_chr(tab_holder, get_url, target_path='.//*[@data-stat="match_report"]//a')
   # match_urls <- match_urls[!duplicated(match_urls, incomparables = NA)]
+
+  home_team_urls <- purrr::map_chr(tab_holder, get_url, target_path='.//*[@data-stat="home_team"]//a')
+
+  away_team_urls <- purrr::map_chr(tab_holder, get_url, target_path='.//*[@data-stat="away_team"]//a')
+
+  home_team_ids <- home_team_urls %>% stringr::str_extract(., "(?<=squads[/])[0-9a-zA-Z]+(?=[/])")
+
+  away_team_ids <- away_team_urls %>% stringr::str_extract(., "(?<=squads[/])[0-9a-zA-Z]+(?=[/])")
 
   suppressWarnings(
     season_summary <- season_summary %>%
@@ -118,7 +126,11 @@
 
   season_summary <- season_summary %>%
     dplyr::mutate(Wk = as.character(.data[["Wk"]])) %>%
-    dplyr::mutate(MatchURL = match_urls)
+    dplyr::mutate(MatchURL = match_urls,
+                  MatchId = stringr::str_extract(MatchURL, '(?<=matches[/]).*(?=[/])'),
+                  HomeTeamId = home_team_ids,
+                  AwayTeamId = away_team_ids
+    )
 
   return(season_summary)
 }
@@ -197,11 +209,21 @@ fb_match_results <- function(country, gender, season_end_year, tier = "1st", non
   all_results <- fixtures_urls %>%
     purrr::map_df(.get_each_season_results)
 
+  league_ids <- stringr::str_extract(seasons$comp_url, '(?<=comps/)[0-9]+(?=/)')
+
   all_results <- seasons %>%
     dplyr::select(Competition_Name=.data[["competition_name"]], Gender=.data[["gender"]], Country=.data[["country"]], Season_End_Year=.data[["season_end_year"]], .data[["seasons_urls"]], .data[["fixtures_url"]]) %>%
+    dplyr::mutate(CompetitionId = league_ids) %>%
     dplyr::right_join(all_results, by = c("fixtures_url" = "fixture_url")) %>%
     dplyr::select(-.data[["seasons_urls"]], -.data[["fixtures_url"]]) %>%
     dplyr::mutate(Date = lubridate::ymd(.data[["Date"]])) %>%
+    dplyr::select(.data[["Competition_Name"]], .data[["CompetitionId"]], .data[["Gender"]],
+                  .data[["Country"]], .data[["Season_End_Year"]],
+                  .data[["MatchId"]], .data[["Round"]], .data[["Wk"]], .data[["Day"]], .data[["Date"]], .data[["Time"]],
+                  .data[["HomeTeamId"]], .data[["Home"]], .data[["HomeGoals"]],
+                  .data[["AwayTeamId"]], .data[["Away"]], .data[["AwayGoals"]],
+                  dplyr::everything()
+                  ) %>%
     dplyr::arrange(.data[["Country"]], .data[["Competition_Name"]], .data[["Gender"]], .data[["Season_End_Year"]], .data[["Wk"]], .data[["Date"]], .data[["Time"]]) %>% dplyr::distinct(.keep_all = T)
 
 
