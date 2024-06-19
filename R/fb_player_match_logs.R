@@ -41,6 +41,7 @@ fb_player_match_logs <- function(player_url, season_end_year, stat_type, time_pa
   player_page <- .load_page(player_url)
 
   player_name <- player_page %>% rvest::html_node("h1") %>% rvest::html_text() %>% stringr::str_squish()
+  player_ids <- stringr::str_extract(player_url, '(?<=players[/])[0-9a-zA-Z]+(?=[/])')
 
   main_cats <- player_page %>% rvest::html_nodes("#inner_nav") %>% rvest::html_nodes(".full.hasmore")
   span_names <- main_cats %>% rvest::html_nodes("span") %>% rvest::html_text()
@@ -98,6 +99,17 @@ fb_player_match_logs <- function(player_url, season_end_year, stat_type, time_pa
       Sys.sleep(1)
       stat_page <- .load_page(paste0(main_url, log_url))
 
+      comp_ids <- stat_page %>%
+        html_nodes(".table_container") %>%
+        html_nodes(xpath = '//*[@data-stat="comp"]/a') %>%
+        html_attr("href") %>%
+        stringr::str_extract(., '(?<=comps/)[0-9]+(?=/)')
+      team_ids <- stat_page %>%
+        html_nodes(".table_container") %>%
+        html_nodes(xpath = '//*[@data-stat="team"]/a') %>%
+        html_attr("href") %>%
+        stringr::str_extract(., '(?<=squads/)[0-9a-zA-Z]+(?=/)')
+
       tab <- stat_page %>% rvest::html_nodes(".table_container") %>% rvest::html_nodes("table") %>% rvest::html_table() %>% data.frame()
 
       tab <- .clean_table_names(tab)
@@ -106,11 +118,15 @@ fb_player_match_logs <- function(player_url, season_end_year, stat_type, time_pa
         dplyr::filter(.data[["Date"]] != "") %>%
         dplyr::mutate(Squad = sub("^.*?([A-Z])", "\\1", .data[["Squad"]]),
                       Opponent = sub("^.*?([A-Z])", "\\1", .data[["Opponent"]]),
+                      PlayerId = player_ids,
                       Player = player_name,
-                      Season = season) %>%
-        dplyr::select(.data[["Player"]], .data[["Season"]], dplyr::everything(), -.data[["Match Report"]])
+                      Season = season,
+                      CompetitionId = comp_ids,
+                      TeamId = team_ids) %>%
+        dplyr::select(.data[["PlayerId"]], .data[["Player"]], .data[["Season"]], .data[["CompetitionId"]], .data[["TeamId"]],
+                      dplyr::everything(), -.data[["Match Report"]])
 
-      non_num_vars <- c("Player", "Season", "Date", "Day", "Comp", "Round", "Venue", "Result", "Squad", "Opponent", "Start", "Pos")
+      non_num_vars <- c("PlayerId", "CompetitionId", "TeamId", "Player", "Season", "Date", "Day", "Comp", "Round", "Venue", "Result", "Squad", "Opponent", "Start", "Pos")
       cols_to_transform <- names(tab)[!names(tab) %in% non_num_vars]
 
       suppressWarnings(
