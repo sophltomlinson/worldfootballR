@@ -41,6 +41,9 @@ fb_match_lineups <- function(match_url, time_pause=3) {
 
       lineups <- match_page %>% rvest::html_nodes(".lineup") %>% rvest::html_nodes("table")
 
+      team_ids <- match_page %>% rvest::html_nodes(".scorebox") %>% rvest::html_nodes("img") %>% rvest::html_attr("src") %>%
+        stringr::str_extract("(?<=/)[0-9a-zA-Z]*(?=.png)")
+
       home <- 1
       away <- 2
 
@@ -52,7 +55,7 @@ fb_match_lineups <- function(match_url, time_pause=3) {
         is_diamond <- grepl("\\..$", formation)
         # on Windows, the diamond is coming through as utf-8, while on MacOS coming through as ".."
         if(grepl("u", formation, ignore.case = T)) {
-          formation  <- formation %>% gsub("u\\..*", "", ., ignore.case = T) %>%stringr::str_extract_all(., "[[:digit:]]") %>% unlist() %>% paste(collapse = "-")
+          formation  <- formation %>% gsub("u\\..*", "", ., ignore.case = T) %>% stringr::str_extract_all(., "[[:digit:]]") %>% unlist() %>% paste(collapse = "-")
         } else {
           formation  <- formation %>% stringr::str_extract_all(., "[[:digit:]]") %>% unlist() %>% paste(collapse = "-")
         }
@@ -72,9 +75,11 @@ fb_match_lineups <- function(match_url, time_pause=3) {
           dplyr::mutate(Matchday = match_date,
                         Team = team,
                         Formation = formation,
-                        PlayerURL = player_urls)
+                        PlayerURL = player_urls,
+                        PlayerId = stringr::str_extract(PlayerURL, '(?<=players[/])[0-9a-zA-Z]+(?=[/])')
+                        )
 
-        names(lineup) <- c("Player_Num", "Player_Name", "Starting", "Matchday", "Team", "Formation", "PlayerURL")
+        names(lineup) <- c("Player_Num", "Player_Name", "Starting", "Matchday", "Team", "Formation", "PlayerURL", "PlayerId")
 
         all_tables <- match_page %>%
           rvest::html_nodes(".table_container")
@@ -84,8 +89,10 @@ fb_match_lineups <- function(match_url, time_pause=3) {
 
         if(home_away == 1) {
           home_or_away <- "Home"
+          team_id <- team_ids[1]
         } else {
           home_or_away <- "Away"
+          team_id <- team_ids[2]
         }
 
         additional_info <- stat_df[home_away]%>% rvest::html_table() %>% data.frame()
@@ -106,12 +113,15 @@ fb_match_lineups <- function(match_url, time_pause=3) {
 
 
         lineup <- lineup %>%
-          dplyr::mutate(Player_Num = as.character(.data[["Player_Num"]])) %>%
+          dplyr::mutate(Player_Num = as.character(.data[["Player_Num"]]),
+                        TeamId = team_id) %>%
           dplyr::left_join(additional_info, by = c("Team", "Player_Name" = "Player", "Player_Num")) %>%
           dplyr::mutate(Home_Away = ifelse(is.na(.data[["Home_Away"]]), home_or_away, .data[["Home_Away"]])) %>%
           dplyr::select(.data[["Matchday"]], .data[["Team"]], .data[["Home_Away"]], .data[["Formation"]], .data[["Player_Num"]], .data[["Player_Name"]], .data[["Starting"]], dplyr::everything()) %>%
           dplyr::mutate(Matchday = lubridate::ymd(.data[["Matchday"]])) %>%
-          dplyr::mutate(MatchURL = match_url)
+          dplyr::mutate(MatchURL = match_url,
+                        MatchId = stringr::str_extract(MatchURL, '(?<=matches[/]).*(?=[/])')) %>%
+          dplyr::select(.data[["Matchday"]], .data[["MatchId"]], .data[["TeamId"]], .data[["PlayerId"]], dplyr::everything())
 
         return(lineup)
       }
